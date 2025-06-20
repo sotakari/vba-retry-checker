@@ -1,85 +1,95 @@
 Option Explicit
 
-'--- メールアドレスの照合と結果出力（メイン処理） ---
-Sub CheckReplies()
-    If MsgBox("返信チェックを開始します。よろしいですか？", vbYesNo + vbQuestion, "確認") = vbNo Then Exit Sub
+Sub ExtractSenderAddresses()
+    Dim olApp As Object
+    Dim selectedItems As Object
+    Dim mail As Object
+    Dim i As Long
+    Dim ws1 As Worksheet
+    Dim ws2 As Worksheet
+    Dim replyList() As Variant
+    Dim replyCount As Long
+    Dim answer As VbMsgBoxResult
 
-    Dim wsInput As Worksheet
-    Dim wsExtract As Worksheet
-    Dim outlookApp As Outlook.Application
-    Dim mail As Outlook.MailItem
-    Dim selectedItems As Selection
-    Dim replyList As Collection
-    Dim i As Long, j As Long
-    Dim sender As String
-    Dim found As Boolean
+    ' 処理確認メッセージ
+    answer = MsgBox("選択されたメールから返信者アドレスを抽出し、照合を実行しますか？", vbYesNo + vbQuestion, "確認")
+    If answer = vbNo Then Exit Sub
 
-    Set wsInput = ThisWorkbook.Sheets("Sheet1")
-    Set wsExtract = ThisWorkbook.Sheets("Sheet2")
+    Set olApp = GetObject(, "Outlook.Application")
+    Set selectedItems = olApp.ActiveExplorer.Selection
+    Set ws1 = ThisWorkbook.Sheets(1)
+    Set ws2 = ThisWorkbook.Sheets(2)
 
-    Set outlookApp = Outlook.Application
-    Set selectedItems = outlookApp.ActiveExplorer.Selection
-    Set replyList = New Collection
+    ' ヘッダーは固定、2行目以降に書き込む
+    replyCount = 0
+    ReDim replyList(1 To selectedItems.Count)
 
-    j = 2
     For Each mail In selectedItems
         If mail.Class = 43 Then
-            sender = mail.SenderEmailAddress
-            On Error Resume Next
-            replyList.Add sender, sender
-            On Error GoTo 0
-            wsExtract.Cells(j, 1).Value = sender
-            j = j + 1
+            replyCount = replyCount + 1
+            replyList(replyCount) = mail.SenderEmailAddress
+            ws2.Cells(replyCount + 1, 1).Value = mail.SenderEmailAddress
         End If
-    Next mail
+    Next
 
-    i = 2
-    Do While wsInput.Cells(i, 1).Value <> ""
+    If replyCount = 0 Then
+        MsgBox "抽出できるメールがありませんでした。", vbInformation
+        Exit Sub
+    End If
+
+    ' A列との照合
+    Dim lastRowA As Long
+    Dim j As Long
+    Dim found As Boolean
+    lastRowA = ws1.Cells(ws1.Rows.Count, 1).End(xlUp).Row
+
+    ws1.Cells(1, 2).Value = "返信状況"
+
+    For i = 2 To lastRowA
         found = False
-        For Each sender In replyList
-            If wsInput.Cells(i, 1).Value = sender Then
+        For j = 1 To replyCount
+            If ws1.Cells(i, 1).Value = replyList(j) Then
                 found = True
                 Exit For
             End If
-        Next sender
+        Next j
 
         If found Then
-            wsInput.Cells(i, 2).Value = "返信あり"
-            wsInput.Cells(i, 2).Interior.Color = RGB(198, 239, 206)
+            ws1.Cells(i, 2).Value = "返信あり"
+            ws1.Cells(i, 2).Interior.Color = RGB(200, 255, 200)
         Else
-            wsInput.Cells(i, 2).Value = "未返信"
-            wsInput.Cells(i, 2).Interior.ColorIndex = xlColorIndexNone
+            ws1.Cells(i, 2).Value = "未返信"
+            ws1.Cells(i, 2).Interior.ColorIndex = xlColorIndexNone
         End If
-        i = i + 1
-    Loop
+    Next i
 
-    MsgBox "返信チェックが完了しました！", vbInformation
+    MsgBox "抽出・照合が完了しました。", vbInformation
 End Sub
 
-'--- 結果のみクリア（B列とSheet2） ---
-Sub ClearExtract()
-    If MsgBox("結果列と抽出されたアドレスを削除します。よろしいですか？", vbYesNo + vbExclamation, "確認") = vbNo Then Exit Sub
-
+Sub ClearAllData()
     Dim ws1 As Worksheet, ws2 As Worksheet
-    Set ws1 = ThisWorkbook.Sheets("Sheet1")
-    Set ws2 = ThisWorkbook.Sheets("Sheet2")
+    Dim answer As VbMsgBoxResult
+    answer = MsgBox("全てのデータを削除します。実行してもよいですか？", vbYesNo + vbExclamation, "最終確認")
+    If answer = vbNo Then Exit Sub
 
-    ws1.Range("B2:B" & ws1.Cells(ws1.Rows.Count, "B").End(xlUp).Row).ClearContents
-    ws1.Range("B2:B" & ws1.Cells(ws1.Rows.Count, "B").End(xlUp).Row).Interior.ColorIndex = xlColorIndexNone
+    Set ws1 = ThisWorkbook.Sheets(1)
+    Set ws2 = ThisWorkbook.Sheets(2)
 
-    ws2.Range("A2:A" & ws2.Cells(ws2.Rows.Count, "A").End(xlUp).Row).ClearContents
+    ws1.Range("A2:B" & ws1.Rows.Count).ClearContents
+    ws1.Range("B2:B" & ws1.Rows.Count).Interior.ColorIndex = xlColorIndexNone
+    ws2.Range("A2:A" & ws2.Rows.Count).ClearContents
 End Sub
 
-'--- オールクリア（A列とB列とSheet2） ---
-Sub ClearAll()
-    If MsgBox("すべてのデータを削除します。よろしいですか？", vbYesNo + vbCritical, "確認") = vbNo Then Exit Sub
-
+Sub ClearReplyDataOnly()
     Dim ws1 As Worksheet, ws2 As Worksheet
-    Set ws1 = ThisWorkbook.Sheets("Sheet1")
-    Set ws2 = ThisWorkbook.Sheets("Sheet2")
+    Dim answer As VbMsgBoxResult
+    answer = MsgBox("返信結果のみを削除します。実行してもよいですか？", vbYesNo + vbExclamation, "最終確認")
+    If answer = vbNo Then Exit Sub
 
-    ws1.Range("A2:B" & ws1.Cells(ws1.Rows.Count, "B").End(xlUp).Row).ClearContents
-    ws1.Range("A2:B" & ws1.Cells(ws1.Rows.Count, "B").End(xlUp).Row).Interior.ColorIndex = xlColorIndexNone
+    Set ws1 = ThisWorkbook.Sheets(1)
+    Set ws2 = ThisWorkbook.Sheets(2)
 
-    ws2.Range("A2:A" & ws2.Cells(ws2.Rows.Count, "A").End(xlUp).Row).ClearContents
+    ws1.Range("B2:B" & ws1.Rows.Count).ClearContents
+    ws1.Range("B2:B" & ws1.Rows.Count).Interior.ColorIndex = xlColorIndexNone
+    ws2.Range("A2:A" & ws2.Rows.Count).ClearContents
 End Sub
